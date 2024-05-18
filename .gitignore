@@ -1,0 +1,10 @@
+/test/
+/bin/
+/obj/
+*.
+*.exe
+*.out
+
+.DS_Store
+Thumbs.db
+*.swp
