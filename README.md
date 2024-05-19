@@ -33,8 +33,8 @@ manakan "message"
 # You can specify the host by adding the option.
 manakan -t example-discord "message"
 
-echo "message" | manakan "message"
-echo "message" | manakan -t example-discord "message"
+echo "message" | manakan 
+echo "message" | manakan -t example-discord
 ```
 
 ## Uninstall
