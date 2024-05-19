@@ -1,1 +1,35 @@
-manakan
+# manakan
+
+## Installation
+
+```bash
+make
+```
+### Binary
+
+```bash
+# Copy to directory included in PATH
+cp bin/manakan $HOME/.local/bin/manakan
+
+# If you need completion.
+cp completions/manakan_completions.sh $HOME/.local/share/bash-completion/manakan_completions.sh 
+```
+### Config
+
+Write the header and data using TOML notation.  
+For messages you want to send dynamically, write the key name.  
+[Config Example](https://github.com/recelsus/manakan/blob/master/config/manakan.toml.example)
+```bash
+cp config/manakan.toml.example $XDG_CONFIG_HOME/manakan/manakan.toml 
+or
+cp config/manakan.toml.example $HOME/.config/manakan/manakan.toml 
+```
+
+## Usage
+
+```bash
+manakan "message"
+manakan -t discord "message"
+echo "message" | manakan "message"
+echo "message" | manakan -t discord "message"
+```
