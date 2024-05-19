@@ -28,8 +28,18 @@ cp config/manakan.toml.example $HOME/.config/manakan/manakan.toml
 ## Usage
 
 ```bash
+# The first host written in TOML will be selected.
 manakan "message"
+# You can specify the host by adding the option.
 manakan -t example-discord "message"
+
 echo "message" | manakan "message"
 echo "message" | manakan -t example-discord "message"
+```
+
+## Uninstall
+```bash
+rm #HOME/.local/bin/manakan
+rm $HOME/.local/share/bash-completion/manakan_completions.sh
+rm -rf $HOME/.config/manakan
 ```
