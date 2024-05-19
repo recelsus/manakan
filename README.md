@@ -29,7 +29,7 @@ cp config/manakan.toml.example $HOME/.config/manakan/manakan.toml
 
 ```bash
 manakan "message"
-manakan -t discord "message"
+manakan -t example-discord "message"
 echo "message" | manakan "message"
-echo "message" | manakan -t discord "message"
+echo "message" | manakan -t example-discord "message"
 ```
