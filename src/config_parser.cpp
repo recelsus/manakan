@@ -1,9 +1,8 @@
 #include "config_parser.hpp"
 #include <iostream>
 #include <fstream>
-#include <vector>
-#include <unordered_map>
 #include <regex>
+#include <vector>
 
 std::vector<std::string> extractHostKeys(const std::string& filepath) {
   std::vector<std::string> hostKeys;
