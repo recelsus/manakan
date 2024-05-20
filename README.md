@@ -12,7 +12,7 @@ make
 cp bin/manakan $HOME/.local/bin/manakan
 
 # If you need completion.
-cp completions/manakan_completions.sh $HOME/.local/share/bash-completion/manakan_completions.sh 
+cp completions/manakan.bash $BASH_COMPLETION_USER_DIR/manakan.bash
 ```
 ### Config
 
@@ -40,6 +40,6 @@ echo "message" | manakan -t example-discord
 ## Uninstall
 ```bash
 rm $HOME/.local/bin/manakan
-rm $BASH_COMPLETION_USER_DIR/manakan_completions.bash
+rm $BASH_COMPLETION_USER_DIR/manakan.bash
 rm -rf $HOME/.config/manakan
 ```
