@@ -1,5 +1,28 @@
 #include "config_parser.hpp"
 #include <iostream>
+#include <fstream>
+#include <vector>
+#include <unordered_map>
+#include <regex>
+
+std::vector<std::string> extractHostKeys(const std::string& filepath) {
+  std::vector<std::string> hostKeys;
+  std::ifstream file(filepath);
+  if (!file.is_open()) {
+    throw std::runtime_error("Could not open config file");
+  }
+
+  std::string line;
+  std::regex hostRegex(R"(^\[host\.(.+?)\])");
+  std::smatch match;
+
+  while (std::getline(file, line)) {
+    if (std::regex_search(line, match, hostRegex)) {
+      hostKeys.push_back(match[1].str());
+    }
+  }
+  return hostKeys;
+}
 
 std::optional<Config> parseTomlConfig(const std::string& filepath, const std::string& hostKey) {
 
@@ -10,14 +33,17 @@ std::optional<Config> parseTomlConfig(const std::string& filepath, const std::st
     std::string effectiveHostKey = hostKey;
 
     if (hostKey == "default-host") {
-      auto hostTable = config["host"];
-      if (hostTable.is_table()) {
-        const auto& firstHost = hostTable.as_table()->begin();
-        if (firstHost != hostTable.as_table()->end()) {
-          effectiveHostKey = firstHost->first.str();
-        }
+      std::vector<std::string> hostKeys = extractHostKeys(filepath);
+      
+      for (const auto& key : hostKeys) {
+      }
+
+      if (!hostKey.empty()) {
+        effectiveHostKey = hostKeys.front();
       }
     }
+
+    std::cout << effectiveHostKey << std::endl;
 
     auto hostTable = config["host"][effectiveHostKey];
     if(!hostTable.is_table()) {
