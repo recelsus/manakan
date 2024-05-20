@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string>
+#include <unistd.h>
 #include "httplib.h"
 #include "json.hpp"
 #include "config_parser.hpp"
@@ -16,6 +17,9 @@ std::optional<std::pair<std::string, std::string>> parseArguments(int argc, char
   std::string message;
 
   if (argc == 1) {
+    if (isatty(STDIN_FILENO)) {
+      return std::nullopt;
+    }
     message = "";
   } else if (argc == 2 && std::string(argv[1]) != "-t") {
     message = argv[1];
@@ -57,7 +61,7 @@ int main(int argc, char *argv[]) {
 
   auto [hostKey, message] = args.value();
 
-  if (message.empty()) {
+  if (message.empty() && !isatty(STDIN_FILENO)) {
     message = readMessageFromStdin();
   }
 

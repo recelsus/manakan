@@ -40,6 +40,6 @@ echo "message" | manakan -t example-discord
 ## Uninstall
 ```bash
 rm #HOME/.local/bin/manakan
-rm $HOME/.local/share/bash-completion/manakan_completions.sh
+rm $BASH_COMPLETION_USER_DIR/manakan_completions.bash
 rm -rf $HOME/.config/manakan
 ```
