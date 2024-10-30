@@ -13,7 +13,7 @@ void printUsage(const std::string &appName) {
 }
 
 std::optional<std::pair<std::string, std::string>> parseArguments(int argc, char *argv[]) {
-  std::string hostKey = "default-host";
+  std::string hostKey = "$$default$$";
   std::string message;
 
   if (argc == 1) {
