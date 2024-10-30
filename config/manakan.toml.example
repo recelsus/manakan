@@ -1,3 +1,5 @@
+# vim: ft=toml
+
 [host.example-chatwork]
 url = "https://api.chatwork.com"
 path = "/v2/rooms/{{ROOM_ID}}/messages"
