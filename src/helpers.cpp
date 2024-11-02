@@ -5,24 +5,24 @@
 #include <cstdlib>
 
 std::string toLower(const std::string &str) {
-    std::string lowerStr = str;
-    std::transform(lowerStr.begin(), lowerStr.end(), lowerStr.begin(), ::tolower);
-    return lowerStr;
+  std::string lowerStr = str;
+  std::transform(lowerStr.begin(), lowerStr.end(), lowerStr.begin(), ::tolower);
+  return lowerStr;
 }
 
 std::string urlEncode(const std::string &value) {
-    std::ostringstream escaped;
-    escaped.fill('0');
-    escaped << std::hex;
+  std::ostringstream escaped;
+  escaped.fill('0');
+  escaped << std::hex;
 
-    for (char c : value) {
-        if (isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.' || c == '~') {
-            escaped << c;
-        } else {
-            escaped << '%' << std::setw(2) << static_cast<int>(static_cast<unsigned char>(c));
-        }
+  for (char c : value) {
+    if (isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.' || c == '~') {
+      escaped << c;
+    } else {
+      escaped << '%' << std::setw(2) << static_cast<int>(static_cast<unsigned char>(c));
     }
-    return escaped.str();
+  }
+  return escaped.str();
 }
 
 std::string getConfigFilePath(const std::string &appName) {

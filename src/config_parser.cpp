@@ -81,7 +81,7 @@ std::optional<Config> parseTomlConfig(const std::string& filepath, const std::st
       }
       result.data.emplace(kv.first.str(), value_str);
       }
-   }
+    }
 
     if (auto messageKey = hostTable["message"].value<std::string>(); messageKey) {
       result.messageKey = *messageKey;
