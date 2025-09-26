@@ -1,0 +1,50 @@
+# manakan
+
+## Installation
+
+```bash
+mkdir -p build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j
+```
+### Binary
+
+```bash
+# Copy to directory included in PATH
+cp build/bin/manakan $HOME/.local/bin/manakan
+
+# Or install system-wide (requires privilege)
+sudo make -C build install
+
+# If you need completion
+cp completions/manakan.bash $BASH_COMPLETION_USER_DIR/manakan.bash
+```
+### Config
+
+Write the header and data using TOML notation.  
+For messages you want to send dynamically, write the key name.  
+[Config Example](https://github.com/recelsus/manakan/blob/master/config/manakan.toml.example)
+```bash
+cp config/manakan.toml.example $XDG_CONFIG_HOME/manakan/manakan.toml 
+or
+cp config/manakan.toml.example $HOME/.config/manakan/manakan.toml 
+```
+
+## Usage
+
+```bash
+# The first host written in TOML will be selected.
+manakan "message"
+# You can specify the host by adding the option.
+manakan -t example-discord "message"
+
+echo "message" | manakan 
+echo "message" | manakan -t example-discord
+```
+
+## Uninstall
+```bash
+rm $HOME/.local/bin/manakan
+rm $BASH_COMPLETION_USER_DIR/manakan.bash
+rm -rf $HOME/.config/manakan
+```
