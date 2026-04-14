@@ -1,0 +1,4 @@
+# vim: ft=toml
+
+default_provider = "discord"
+default_target = "alerts"

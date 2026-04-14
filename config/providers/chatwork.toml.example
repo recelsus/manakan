@@ -1,0 +1,16 @@
+# vim: ft=toml
+
+name = "chatwork"
+
+method = "POST"
+base_url = "https://api.chatwork.com"
+path = "/v2/rooms/{{room_id}}/messages"
+
+[headers]
+accept = "application/json"
+content-type = "application/x-www-form-urlencoded"
+x-chatworktoken = "{{env.CHATWORK_TOKEN}}"
+
+[body]
+self_unread = "0"
+body = "{{argv.1}}"

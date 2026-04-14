@@ -1,7 +1,6 @@
 // karing-style: namespace, snake_case
 #include "helpers.hpp"
 #include <algorithm>
-#include <cstdlib>
 #include <iomanip>
 #include <sstream>
 
@@ -11,6 +10,13 @@ std::string to_lower(const std::string& s) {
   std::string out = s;
   std::transform(out.begin(), out.end(), out.begin(), ::tolower);
   return out;
+}
+
+std::string trim(const std::string& s) {
+  const auto begin = s.find_first_not_of(" \t\r\n");
+  if (begin == std::string::npos) return "";
+  const auto end = s.find_last_not_of(" \t\r\n");
+  return s.substr(begin, end - begin + 1);
 }
 
 std::string url_encode(const std::string& value) {
@@ -27,19 +33,4 @@ std::string url_encode(const std::string& value) {
   return escaped.str();
 }
 
-std::string get_config_file_path(const std::string& app_name) {
-  const char* xdg_config_home = std::getenv("XDG_CONFIG_HOME");
-  std::ostringstream oss;
-  oss << "/" << app_name << "/" << app_name << ".toml";
-  const std::string app_cfg_rel = oss.str();
-
-  if (xdg_config_home) {
-    return std::string(xdg_config_home) + app_cfg_rel;
-  }
-  const char* home = std::getenv("HOME");
-  if (!home) throw std::runtime_error("HOME environment variable not set");
-  return std::string(home) + "/.config" + app_cfg_rel;
-}
-
 } // namespace manakan
-

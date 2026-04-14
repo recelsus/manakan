@@ -1,0 +1,15 @@
+# vim: ft=toml
+
+name = "discord"
+
+method = "POST"
+base_url = "https://discord.com"
+path = "{{env.WEBHOOK_PATH}}"
+
+[headers]
+content-type = "application/json"
+
+[body]
+username = "{{username}}"
+avatar_url = "{{avatar_url}}"
+content = "{{argv.1}}"

@@ -5,15 +5,27 @@ project(manakan LANGUAGES CXX)
 # Export compile_commands.json for LSP/clangd
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(MANAKAN_INSTALL_TO_HOME_LOCAL "Install under \$HOME/.local when using CMake install" ON)
+
+if((CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT OR MANAKAN_INSTALL_TO_HOME_LOCAL))
+  if(DEFINED ENV{HOME} AND NOT "$ENV{HOME}" STREQUAL "")
+    set(CMAKE_INSTALL_PREFIX "$ENV{HOME}/.local" CACHE PATH "Install prefix" FORCE)
+  else()
+    message(FATAL_ERROR "HOME must be set to install under ~/.local")
+  endif()
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(manakan
   src/main.cpp
-  src/cli/arguments.cpp
+  src/cli/cli.cpp
+  src/config/config_loader.cpp
+  src/resolve/request_resolver.cpp
+  src/transport/http_client.cpp
   src/utils/helpers.cpp
-  src/core/config_parser.cpp
 )
 
 target_include_directories(manakan PRIVATE
@@ -88,7 +100,6 @@ endif()
 # Install rules
 include(GNUInstallDirs)
 install(TARGETS manakan RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES config/manakan.toml.example DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/manakan)
 
 # Clean convenience target
 add_custom_target(clean-all
