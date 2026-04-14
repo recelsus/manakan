@@ -25,7 +25,8 @@ sudo cmake --install build
 cmake -S . -B build -DMANAKAN_INSTALL_TO_HOME_LOCAL=ON
 
 # If you need completion
-cp completions/manakan.bash $BASH_COMPLETION_USER_DIR/manakan.bash
+# If XDG_DATA_HOME is set, make install also places the completion script into
+# $XDG_DATA_HOME/bash_completion/manakan.bash
 ```
 
 ### Config

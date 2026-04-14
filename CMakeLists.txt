@@ -100,6 +100,9 @@ endif()
 # Install rules
 include(GNUInstallDirs)
 install(TARGETS manakan RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(DEFINED ENV{XDG_DATA_HOME} AND NOT "$ENV{XDG_DATA_HOME}" STREQUAL "")
+  install(FILES completions/manakan.bash DESTINATION "$ENV{XDG_DATA_HOME}/bash_completion" RENAME manakan.bash)
+endif()
 
 # Clean convenience target
 add_custom_target(clean-all
