@@ -90,7 +90,7 @@ void load_provider_files(const std::filesystem::path& dir, std::unordered_map<st
   }
 }
 
-void load_target_files(const std::filesystem::path& dir, std::unordered_map<std::string, TargetConfig>& targets) {
+void load_target_files(const std::filesystem::path& dir, std::unordered_map<std::string, std::vector<TargetConfig>>& targets_by_name) {
   for (const auto& path : list_toml_files(dir)) {
     auto cfg = toml::parse_file(path.string());
     const auto use = cfg["use"].value_or(std::string());
@@ -110,9 +110,14 @@ void load_target_files(const std::filesystem::path& dir, std::unordered_map<std:
         target.values.emplace(item.first.str(), toml_node_to_string(item.second));
       }
 
-      if (!targets.emplace(target.name, target).second) {
-        throw std::runtime_error("duplicate target name: " + target.name);
+      auto& bucket = targets_by_name[target.name];
+      const auto duplicate = std::find_if(bucket.begin(), bucket.end(), [&](const TargetConfig& existing) {
+        return existing.use == target.use;
+      });
+      if (duplicate != bucket.end()) {
+        throw std::runtime_error("duplicate target name for provider '" + target.use + "': " + target.name);
       }
+      bucket.push_back(std::move(target));
     }
   }
 }
@@ -142,10 +147,10 @@ LoadedConfig load_config_tree(const ConfigPaths& paths) {
   LoadedConfig loaded;
   loaded.defaults = load_defaults_file(paths.config_file);
   load_provider_files(paths.providers_dir, loaded.providers);
-  load_target_files(paths.targets_dir, loaded.targets);
+  load_target_files(paths.targets_dir, loaded.targets_by_name);
 
   if (loaded.providers.empty()) throw std::runtime_error("no providers found in " + paths.providers_dir.string());
-  if (loaded.targets.empty()) throw std::runtime_error("no targets found in " + paths.targets_dir.string());
+  if (loaded.targets_by_name.empty()) throw std::runtime_error("no targets found in " + paths.targets_dir.string());
 
   return loaded;
 }

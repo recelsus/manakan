@@ -106,12 +106,31 @@ std::string resolve_template(const std::string& input, ResolverContext& ctx) {
 const TargetConfig& select_target(const LoadedConfig& config, const CliOptions& cli) {
   std::optional<std::string> name = cli.target;
   if (!name) name = config.defaults.default_target;
-  if (!name && config.targets.size() == 1) name = config.targets.begin()->first;
+  if (!name && config.targets_by_name.size() == 1 && config.targets_by_name.begin()->second.size() == 1) {
+    name = config.targets_by_name.begin()->first;
+  }
   if (!name) throw std::runtime_error("target is required; use --target or configure default_target");
 
-  auto it = config.targets.find(*name);
-  if (it == config.targets.end()) throw std::runtime_error("target not found: " + *name);
-  return it->second;
+  auto it = config.targets_by_name.find(*name);
+  if (it == config.targets_by_name.end()) throw std::runtime_error("target not found: " + *name);
+
+  const auto& candidates = it->second;
+  if (candidates.size() == 1) return candidates.front();
+
+  std::optional<std::string> provider_name = cli.provider;
+  if (!provider_name) provider_name = config.defaults.default_provider;
+  if (!provider_name) {
+    throw std::runtime_error(
+        "target '" + *name + "' exists for multiple providers; specify --provider or configure default_provider");
+  }
+
+  auto match = std::find_if(candidates.begin(), candidates.end(), [&](const TargetConfig& target) {
+    return target.use == *provider_name;
+  });
+  if (match == candidates.end()) {
+    throw std::runtime_error("target '" + *name + "' does not exist for provider '" + *provider_name + "'");
+  }
+  return *match;
 }
 
 const ProviderConfig& select_provider(const LoadedConfig& config, const CliOptions& cli, const TargetConfig& target) {

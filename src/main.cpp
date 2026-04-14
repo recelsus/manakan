@@ -99,7 +99,10 @@ int main(int argc, char* argv[]) {
       throw;
     }
 
-    if (!cli.target && !config.defaults.default_target && config.targets.size() != 1) {
+    std::size_t total_targets = 0;
+    for (const auto& kv : config.targets_by_name) total_targets += kv.second.size();
+
+    if (!cli.target && !config.defaults.default_target && total_targets != 1) {
       std::cerr << "No target was specified and no default_target is configured." << std::endl;
       std::cerr << "Set default_target in " << paths.config_file << " or pass --target." << std::endl;
       return 1;

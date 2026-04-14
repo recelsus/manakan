@@ -48,7 +48,7 @@ struct TargetConfig {
 struct LoadedConfig {
   AppDefaults defaults;
   std::unordered_map<std::string, ProviderConfig> providers;
-  std::unordered_map<std::string, TargetConfig> targets;
+  std::unordered_map<std::string, std::vector<TargetConfig>> targets_by_name;
 };
 
 struct ResolvedRequest {
