@@ -19,32 +19,37 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_executable(manakan
-  src/main.cpp
+add_library(manakan_core STATIC
   src/cli/cli.cpp
   src/config/config_loader.cpp
   src/resolve/request_resolver.cpp
-  src/transport/http_client.cpp
   src/utils/helpers.cpp
 )
 
-target_include_directories(manakan PRIVATE
+target_include_directories(manakan_core PUBLIC
   ${CMAKE_SOURCE_DIR}/include
   ${CMAKE_SOURCE_DIR}/src
   ${CMAKE_SOURCE_DIR}
 )
 
+add_executable(manakan
+  src/main.cpp
+  src/transport/http_client.cpp
+)
+
+target_link_libraries(manakan PRIVATE manakan_core)
+
 # Prefer OpenSSL via CMake packages; define for cpp-httplib if available
 find_package(OpenSSL QUIET)
 if (OpenSSL_FOUND)
-  target_link_libraries(manakan PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-  target_compile_definitions(manakan PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
+  target_link_libraries(manakan_core PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+  target_compile_definitions(manakan_core PUBLIC CPPHTTPLIB_OPENSSL_SUPPORT)
 else()
   message(STATUS "OpenSSL not found via CMake; attempting platform libs fallback")
   if (UNIX)
-    target_link_libraries(manakan PRIVATE ssl crypto pthread)
+    target_link_libraries(manakan_core PUBLIC ssl crypto pthread)
   elseif (WIN32)
-    target_link_libraries(manakan PRIVATE ws2_32)
+    target_link_libraries(manakan_core PUBLIC ws2_32)
   endif()
 endif()
 
@@ -79,6 +84,13 @@ target_compile_definitions(manakan PRIVATE
   MANAKAN_BUILD_TYPE=\"${CMAKE_BUILD_TYPE}\"
 )
 
+target_compile_definitions(manakan_core PUBLIC
+  MANAKAN_GIT_REV=\"${MANAKAN_GIT_DESCRIBE}\"
+  MANAKAN_BUILD_TIME=\"${MANAKAN_BUILD_TIME_UTC}\"
+  MANAKAN_CXX_STANDARD=${CMAKE_CXX_STANDARD}
+  MANAKAN_BUILD_TYPE=\"${CMAKE_BUILD_TYPE}\"
+)
+
 # Create/refresh a top-level compile_commands.json symlink (or copy on Windows)
 if (EXISTS ${CMAKE_BINARY_DIR}/compile_commands.json)
   if (WIN32)
@@ -96,6 +108,15 @@ if (EXISTS ${CMAKE_BINARY_DIR}/compile_commands.json)
       COMMENT "Symlink compile_commands.json to project root for clangd")
   endif()
 endif()
+
+enable_testing()
+
+add_executable(manakan_tests
+  tests/config_resolver_tests.cpp
+)
+target_link_libraries(manakan_tests PRIVATE manakan_core)
+set_target_properties(manakan_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+add_test(NAME manakan_tests COMMAND $<TARGET_FILE:manakan_tests>)
 
 # Install rules
 include(GNUInstallDirs)
