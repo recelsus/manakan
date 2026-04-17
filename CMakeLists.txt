@@ -20,6 +20,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(manakan_core STATIC
+  src/app/bootstrap.cpp
+  src/app/run_command.cpp
   src/cli/cli.cpp
   src/config/config_loader.cpp
   src/resolve/request_resolver.cpp
