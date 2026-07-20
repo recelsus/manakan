@@ -115,3 +115,11 @@ rm $HOME/.local/bin/manakan
 rm $BASH_COMPLETION_USER_DIR/manakan.bash
 rm -rf $HOME/.config/manakan
 ```
+
+## License
+
+manakan is licensed under the MIT License. See `LICENSE`.
+
+## Third-Party Notices
+
+Third-party dependency notices are listed in `THIRD_PARTY_NOTICES.md`.
