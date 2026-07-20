@@ -2,14 +2,15 @@
 
 name = "discord"
 
+[request]
 method = "POST"
 base_url = "https://discord.com"
-path = "{{env.WEBHOOK_PATH}}"
+path = "/api/webhooks{{webhook_path}}"
 
 [headers]
 content-type = "application/json"
 
-[body]
+[data]
 username = "{{username}}"
 avatar_url = "{{avatar_url}}"
 content = "{{argv.1}}"

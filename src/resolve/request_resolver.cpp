@@ -1,6 +1,6 @@
 #include "request_resolver.hpp"
 #include "helpers.hpp"
-#include <algorithm>
+#include "merge.hpp"
 #include <cstdlib>
 #include <regex>
 #include <set>
@@ -12,9 +12,11 @@ namespace manakan {
 namespace {
 
 struct ResolverContext {
-  const ProviderConfig& provider;
-  const TargetConfig& target;
   const CliOptions& cli;
+  // Bare-name (no source prefix) placeholder values, collected from every scalar
+  // leaf anywhere in the merged provider+target tree, then overlaid with CLI
+  // --input values (highest priority). Values may themselves still contain
+  // unresolved placeholders and are resolved lazily, with cycle detection.
   std::unordered_map<std::string, std::string> merged_values;
   std::unordered_map<std::string, std::string> cache;
   std::unordered_set<std::string> resolving;
@@ -103,85 +105,119 @@ std::string resolve_template(const std::string& input, ResolverContext& ctx) {
   return output;
 }
 
-const TargetConfig& select_target(const LoadedConfig& config, const CliOptions& cli) {
-  std::optional<std::string> name = cli.target;
-  if (!name) name = config.defaults.default_target;
-  if (!name && config.targets_by_name.size() == 1 && config.targets_by_name.begin()->second.size() == 1) {
-    name = config.targets_by_name.begin()->first;
+// Collects every scalar leaf anywhere in the tree, keyed by its own (bare) key
+// name, so `{{name}}` placeholders can reference a value defined at any depth in
+// any top-level section -- not just the section it is used from.
+void collect_named_values(const TomlValue& value, std::unordered_map<std::string, std::string>& out) {
+  if (!value.is_table()) return;
+  for (const auto& kv : value.table()) {
+    if (kv.second.is_scalar()) out[kv.first] = kv.second.scalar();
+    collect_named_values(kv.second, out);
   }
-  if (!name) throw std::runtime_error("target is required; use --target or configure default_target");
-
-  auto it = config.targets_by_name.find(*name);
-  if (it == config.targets_by_name.end()) throw std::runtime_error("target not found: " + *name);
-
-  const auto& candidates = it->second;
-  if (candidates.size() == 1) return candidates.front();
-
-  std::optional<std::string> provider_name = cli.provider;
-  if (!provider_name) provider_name = config.defaults.default_provider;
-  if (!provider_name) {
-    throw std::runtime_error(
-        "target '" + *name + "' exists for multiple providers; specify --provider or configure default_provider");
-  }
-
-  auto match = std::find_if(candidates.begin(), candidates.end(), [&](const TargetConfig& target) {
-    return target.use == *provider_name;
-  });
-  if (match == candidates.end()) {
-    throw std::runtime_error("target '" + *name + "' does not exist for provider '" + *provider_name + "'");
-  }
-  return *match;
 }
 
-const ProviderConfig& select_provider(const LoadedConfig& config, const CliOptions& cli, const TargetConfig& target) {
-  std::string name = target.use;
-  if (cli.provider && *cli.provider != name) {
-    throw std::runtime_error("provider mismatch: target '" + target.name + "' uses '" + name + "', but CLI requested '" + *cli.provider + "'");
+// Recursively resolves placeholders over a merged tree. At every table level, a
+// key whose bare name matches a CLI --input overrides that entire subtree with
+// the literal CLI value, bypassing whatever template/value the config declared.
+TomlValue resolve_tree(const TomlValue& value, ResolverContext& ctx) {
+  if (value.is_scalar()) return TomlValue(resolve_template(value.scalar(), ctx));
+
+  if (value.is_array()) {
+    TomlValue::Array out;
+    out.reserve(value.array().size());
+    for (const auto& item : value.array()) out.push_back(resolve_tree(item, ctx));
+    return TomlValue(std::move(out));
   }
 
-  if (cli.provider) name = *cli.provider;
-  else if (name.empty() && config.defaults.default_provider) name = *config.defaults.default_provider;
-
-  auto it = config.providers.find(name);
-  if (it == config.providers.end()) throw std::runtime_error("provider not found: " + name);
-  return it->second;
-}
-
-std::unordered_map<std::string, std::string> resolve_map(const std::unordered_map<std::string, std::string>& input, ResolverContext& ctx) {
-  std::unordered_map<std::string, std::string> out;
-  for (const auto& kv : input) {
+  TomlValue::Table out;
+  for (const auto& kv : value.table()) {
     auto cli_override = ctx.cli.inputs.find(kv.first);
     if (cli_override != ctx.cli.inputs.end()) {
-      out.emplace(kv.first, cli_override->second);
+      out.emplace(kv.first, TomlValue(cli_override->second));
       continue;
     }
-    out.emplace(kv.first, resolve_template(kv.second, ctx));
+    out.emplace(kv.first, resolve_tree(kv.second, ctx));
   }
-  return out;
+  return TomlValue(std::move(out));
+}
+
+std::string select_provider_name(const LoadedConfig& config, const CliOptions& cli) {
+  if (cli.provider) return *cli.provider;
+  if (config.defaults.default_provider) return *config.defaults.default_provider;
+  throw std::runtime_error("provider is required; use --provider or configure default_provider");
+}
+
+const TargetConfig& select_target(const LoadedConfig& config, const std::string& provider_name, const CliOptions& cli) {
+  std::vector<const TargetConfig*> candidates;
+  for (const auto& target : config.targets) {
+    if (target.use == provider_name) candidates.push_back(&target);
+  }
+  if (candidates.empty()) throw std::runtime_error("no targets found for provider: " + provider_name);
+
+  if (cli.target) {
+    for (const auto* target : candidates) {
+      if (target->name == *cli.target) return *target;
+    }
+    throw std::runtime_error("target '" + *cli.target + "' not found for provider '" + provider_name + "'");
+  }
+
+  for (const auto* target : candidates) {
+    if (target->is_default) return *target;
+  }
+
+  if (candidates.size() == 1) return *candidates.front();
+
+  throw std::runtime_error("no target specified and provider '" + provider_name +
+                            "' has no default target; use --target");
 }
 
 } // namespace
 
 ResolvedRequest resolve_request(const LoadedConfig& config, const CliOptions& cli) {
-  const auto& target = select_target(config, cli);
-  const auto& provider = select_provider(config, cli, target);
+  const std::string provider_name = select_provider_name(config, cli);
+  auto provider_it = config.providers.find(provider_name);
+  if (provider_it == config.providers.end()) throw std::runtime_error("provider not found: " + provider_name);
+  const ProviderConfig& provider = provider_it->second;
 
-  ResolverContext ctx{provider, target, cli, {}, {}, {}, {}};
+  const TargetConfig& target = select_target(config, provider_name, cli);
 
-  for (const auto& kv : provider.values) ctx.merged_values[kv.first] = kv.second;
-  for (const auto& kv : target.values) ctx.merged_values[kv.first] = kv.second;
-  for (const auto& kv : cli.inputs) ctx.merged_values[kv.first] = kv.second;
+  const TomlValue merged = merge_provider_and_target(provider, target);
+
+  ResolverContext ctx{cli, {}, {}, {}, {}};
+  collect_named_values(merged, ctx.merged_values);
+
+  const TomlValue resolved = resolve_tree(merged, ctx);
+  if (!ctx.missing.empty()) throw std::runtime_error(join_missing(ctx.missing));
+
+  const TomlValue* request_section = resolved.find("request");
+  if (!request_section || !request_section->is_table()) {
+    throw std::runtime_error("internal error: resolved tree missing [request] section");
+  }
+  auto scalar_or = [&](const char* key, const std::string& fallback) -> std::string {
+    const TomlValue* value = request_section->find(key);
+    return (value && value->is_scalar()) ? value->scalar() : fallback;
+  };
 
   ResolvedRequest request;
-  request.provider_name = provider.name;
+  request.provider_name = provider_name;
   request.target_name = target.name;
-  request.method = resolve_template(provider.method, ctx);
-  request.base_url = resolve_template(provider.base_url, ctx);
-  request.path = resolve_template(provider.path, ctx);
-  request.headers = resolve_map(provider.headers, ctx);
-  request.body = resolve_map(provider.body, ctx);
+  request.method = scalar_or("method", "");
+  request.base_url = scalar_or("base_url", "");
+  request.path = scalar_or("path", "/");
 
-  if (!ctx.missing.empty()) throw std::runtime_error(join_missing(ctx.missing));
+  if (const TomlValue* headers = resolved.find("headers"); headers && headers->is_table()) {
+    for (const auto& kv : headers->table()) {
+      if (!kv.second.is_scalar()) throw std::runtime_error("header '" + kv.first + "' must resolve to a scalar value");
+      request.headers[kv.first] = kv.second.scalar();
+    }
+  }
+
+  if (const TomlValue* body = resolved.find("data")) {
+    request.body = *body;
+  } else {
+    request.body = TomlValue(TomlValue::Table{});
+  }
+
   return request;
 }
 

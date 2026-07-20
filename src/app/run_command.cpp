@@ -1,9 +1,13 @@
 #include "app.hpp"
 #include "cli.hpp"
 #include "config_loader.hpp"
+#include "diagnostics.hpp"
+#include "json.hpp"
+#include "request_builder.hpp"
 #include "request_resolver.hpp"
 #include "transport.hpp"
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <unistd.h>
 
@@ -18,10 +22,8 @@ void print_missing_config_guidance(const ConfigPaths& paths) {
   std::cerr << "Examples are available in the repository under config/." << std::endl;
 }
 
-std::size_t count_total_targets(const LoadedConfig& config) {
-  std::size_t total_targets = 0;
-  for (const auto& kv : config.targets_by_name) total_targets += kv.second.size();
-  return total_targets;
+void print_config_warnings(const LoadedConfig& config) {
+  for (const auto& warning : config.warnings) std::cerr << "warning: " << warning << std::endl;
 }
 
 bool prepare_positional_input(CliOptions& cli) {
@@ -44,14 +46,6 @@ LoadedConfig load_runtime_config(const ConfigPaths& paths) {
   }
 }
 
-bool validate_target_selection(const ConfigPaths& paths, const LoadedConfig& config, const CliOptions& cli) {
-  if (cli.target || config.defaults.default_target || count_total_targets(config) == 1) return true;
-
-  std::cerr << "No target was specified and no default_target is configured." << std::endl;
-  std::cerr << "Set default_target in " << paths.config_file << " or pass --target." << std::endl;
-  return false;
-}
-
 void print_response(const ResolvedRequest& request, const HttpResponse& response) {
   std::cout << "Provider: " << request.provider_name << std::endl;
   std::cout << "Target: " << request.target_name << std::endl;
@@ -59,21 +53,87 @@ void print_response(const ResolvedRequest& request, const HttpResponse& response
   if (!response.body.empty()) std::cout << "Response: " << response.body << std::endl;
 }
 
+std::string shell_quote(const std::string& value) {
+  std::string out = "'";
+  for (char c : value) {
+    if (c == '\'') out += "'\\''";
+    else out += c;
+  }
+  out += "'";
+  return out;
+}
+
+void print_config_summary(const ResolvedRequest& request, const BuiltHttpRequest& built) {
+  std::cout << "Provider: " << request.provider_name << std::endl;
+  std::cout << "Target: " << request.target_name << std::endl;
+  std::cout << "Method: " << built.method << std::endl;
+  std::cout << "URL: " << built.base_url << built.path << std::endl;
+  std::cout << "Content-Type: " << built.content_type << std::endl;
+  for (const auto& kv : built.headers) std::cout << "Header: " << kv.first << ": " << kv.second << std::endl;
+  if (!built.body.empty()) std::cout << "Body: " << built.body << std::endl;
+}
+
+void print_config_json(const ResolvedRequest& request, const BuiltHttpRequest& built) {
+  nlohmann::json out;
+  out["provider"] = request.provider_name;
+  out["target"] = request.target_name;
+  out["method"] = built.method;
+  out["url"] = built.base_url + built.path;
+  out["headers"] = built.headers;
+  out["content_type"] = built.content_type;
+  if (built.content_type == "application/json" && !built.body.empty()) {
+    out["body"] = nlohmann::json::parse(built.body, nullptr, false);
+  } else {
+    out["body"] = built.body;
+  }
+  std::cout << out.dump(2) << std::endl;
+}
+
+void print_config_curl(const BuiltHttpRequest& built) {
+  std::ostringstream oss;
+  oss << "curl -X " << built.method;
+  for (const auto& kv : built.headers) oss << " -H " << shell_quote(kv.first + ": " + kv.second);
+  if (!built.body.empty()) oss << " --data " << shell_quote(built.body);
+  oss << " " << shell_quote(built.base_url + built.path);
+  std::cout << oss.str() << std::endl;
+}
+
+int run_config_command(const ConfigPaths& paths, const LoadedConfig& config, CliOptions& cli) {
+  if (cli.config_check) return run_config_check(paths, config);
+
+  const auto request = resolve_request(config, cli);
+  const auto built = build_http_request(request);
+
+  if (cli.config_json) print_config_json(request, built);
+  else if (cli.config_body) std::cout << built.body << std::endl;
+  else if (cli.config_curl) print_config_curl(built);
+  else print_config_summary(request, built);
+
+  return 0;
+}
+
+int run_send_command(const LoadedConfig& config, CliOptions& cli) {
+  const auto request = resolve_request(config, cli);
+  const auto response = send_request(request);
+  print_response(request, response);
+  return 0;
+}
+
 } // namespace
 
 int run_command(const std::string& app_name, CliOptions cli) {
-  prepare_positional_input(cli);
+  // `config --check` validates the whole config tree and never resolves a
+  // target, so it must not block waiting for a message on stdin.
+  if (!(cli.command == Command::Config && cli.config_check)) prepare_positional_input(cli);
 
   const auto paths = get_config_paths(app_name);
   if (!prepare_runtime_environment(paths)) return 1;
 
   const auto config = load_runtime_config(paths);
-  if (!validate_target_selection(paths, config, cli)) return 1;
+  print_config_warnings(config);
 
-  const auto request = resolve_request(config, cli);
-  const auto response = send_request(request);
-  print_response(request, response);
-  return 0;
+  if (cli.command == Command::Config) return run_config_command(paths, config, cli);
+  return run_send_command(config, cli);
 }
 
 } // namespace manakan

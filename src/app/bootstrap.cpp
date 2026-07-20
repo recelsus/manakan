@@ -14,11 +14,25 @@ bool is_yes_answer(const std::string& input) {
 } // namespace
 
 void print_usage(const std::string& app_name) {
-  std::cout << "Usage: " << app_name
-            << " [--provider|-p name] [--target|-t name] [--input|-i key=value ...] [argv...]"
-            << std::endl;
-  std::cout << "Positional arguments are referenced from TOML as {{argv.1}}, {{argv.2}}, ..."
-            << std::endl;
+  std::cout << "Usage: " << app_name << " <command> [options] [argv...]" << std::endl;
+  std::cout << std::endl;
+  std::cout << "Commands:" << std::endl;
+  std::cout << "  send, s     Resolve a target and send the HTTP request" << std::endl;
+  std::cout << "  config      Show the resolved request without sending it" << std::endl;
+  std::cout << std::endl;
+  std::cout << "Common options (send, config):" << std::endl;
+  std::cout << "  --provider|-p name       Select the provider (falls back to default_provider)" << std::endl;
+  std::cout << "  --target|-t name         Select the target (falls back to the provider's default target)"
+             << std::endl;
+  std::cout << "  --input|-i key=value     Provide a named input, overriding config/argv" << std::endl;
+  std::cout << std::endl;
+  std::cout << "config-only options:" << std::endl;
+  std::cout << "  --json                   Print the resolved request as JSON" << std::endl;
+  std::cout << "  --body                   Print only the serialized request body" << std::endl;
+  std::cout << "  --curl                   Print an equivalent curl command" << std::endl;
+  std::cout << "  --check                  Statically validate the whole config tree; does not send" << std::endl;
+  std::cout << std::endl;
+  std::cout << "Positional arguments are referenced from TOML as {{argv.1}}, {{argv.2}}, ..." << std::endl;
   std::cout << "Options: --help|-h --version|-v" << std::endl;
 }
 

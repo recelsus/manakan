@@ -1,13 +1,15 @@
 # vim: ft=toml
 
 use = "discord"
+default = "alerts"
 
 [alerts]
-username = "manakan"
-avatar_url = "https://example.com/avatar-alerts.jpg"
-webhook_path = "/api/webhooks/000000000000000000/alerts-example-token"
+request.webhook_path = "/000000000000000000/alerts-example-token"
+data.username = "manakan"
+data.avatar_url = "https://example.com/avatar-alerts.jpg"
 
 [dev]
-username = "{{arg.username}}"
-avatar_url = "https://example.com/avatar-dev.jpg"
-webhook_path = "{{env.DEV_WEBHOOK_PATH}}"
+request.webhook_path = "{{env.DEV_WEBHOOK_PATH}}"
+data.username = "{{arg.username}}"
+data.avatar_url = "https://example.com/avatar-dev.jpg"
+headers.content-type = "text/plain"

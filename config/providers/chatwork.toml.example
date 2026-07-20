@@ -2,6 +2,7 @@
 
 name = "chatwork"
 
+[request]
 method = "POST"
 base_url = "https://api.chatwork.com"
 path = "/v2/rooms/{{room_id}}/messages"
@@ -11,6 +12,6 @@ accept = "application/json"
 content-type = "application/x-www-form-urlencoded"
 x-chatworktoken = "{{env.CHATWORK_TOKEN}}"
 
-[body]
+[data]
 self_unread = "0"
 body = "{{argv.1}}"

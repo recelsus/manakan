@@ -1,9 +1,10 @@
 # vim: ft=toml
 
 use = "chatwork"
+default = "alerts"
 
 [alerts]
-room_id = "123456789"
+request.room_id = "123456789"
 
 [ops]
-room_id = "{{arg.room_id}}"
+request.room_id = "{{arg.room_id}}"

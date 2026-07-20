@@ -12,12 +12,7 @@ constexpr const char* kProvidersDir = "providers";
 constexpr const char* kTargetsDir = "targets";
 constexpr const char* kConfigFile = "config.toml";
 
-bool is_reserved_provider_key(const std::string& key) {
-  static const std::set<std::string> reserved = {"name", "method", "base_url", "path", "headers", "body"};
-  return reserved.find(key) != reserved.end();
-}
-
-std::string toml_node_to_string(const toml::node& node) {
+std::string toml_scalar_to_string(const toml::node& node) {
   if (auto value = node.value<std::string>()) return *value;
   if (auto value = node.value<int64_t>()) return std::to_string(*value);
   if (auto value = node.value<double>()) return std::to_string(*value);
@@ -25,14 +20,26 @@ std::string toml_node_to_string(const toml::node& node) {
   throw std::runtime_error("unsupported TOML value type");
 }
 
-std::unordered_map<std::string, std::string> parse_string_table(const toml::table* table, const std::string& name) {
-  std::unordered_map<std::string, std::string> out;
-  if (!table) return out;
-
-  for (const auto& kv : *table) {
-    out.emplace(kv.first.str(), toml_node_to_string(kv.second));
+TomlValue toml_node_to_value(const toml::node& node) {
+  if (node.is_table()) {
+    TomlValue::Table table;
+    for (const auto& kv : *node.as_table()) {
+      table.emplace(std::string(kv.first.str()), toml_node_to_value(kv.second));
+    }
+    return TomlValue(std::move(table));
   }
-  return out;
+  if (node.is_array()) {
+    TomlValue::Array array;
+    for (const auto& item : *node.as_array()) array.push_back(toml_node_to_value(item));
+    return TomlValue(std::move(array));
+  }
+  return TomlValue(toml_scalar_to_string(node));
+}
+
+TomlValue toml_table_to_value(const toml::table& root) {
+  TomlValue::Table table;
+  for (const auto& kv : root) table.emplace(std::string(kv.first.str()), toml_node_to_value(kv.second));
+  return TomlValue(std::move(table));
 }
 
 std::vector<std::filesystem::path> list_toml_files(const std::filesystem::path& dir) {
@@ -48,76 +55,194 @@ std::vector<std::filesystem::path> list_toml_files(const std::filesystem::path& 
   return files;
 }
 
+// Records `path` and, if `value` is a table, every path nested inside it. Used to
+// mark every location touched by a `const`/`c` promotion as protected, at any depth.
+void collect_paths(const TomlValue& value, const std::string& path, std::vector<std::string>& out) {
+  out.push_back(path);
+  if (value.is_table()) {
+    for (const auto& kv : value.table()) collect_paths(kv.second, path + "." + kv.first, out);
+  }
+}
+
+// Merges a promoted `const`/`c` subtree into its parent table. Existing sibling
+// tables are merged into recursively (partial protection); anything else that
+// already exists at the same path is a structural conflict.
+void merge_const_into(TomlValue::Table& target, const TomlValue::Table& source, const std::string& prefix,
+                       const std::string& provider_name, std::vector<std::string>& const_paths) {
+  for (const auto& kv : source) {
+    const std::string path = prefix.empty() ? kv.first : prefix + "." + kv.first;
+    auto it = target.find(kv.first);
+    if (it == target.end()) {
+      auto [inserted, _] = target.emplace(kv.first, kv.second);
+      collect_paths(inserted->second, path, const_paths);
+      continue;
+    }
+    if (it->second.is_table() && kv.second.is_table()) {
+      merge_const_into(it->second.table(), kv.second.table(), path, provider_name, const_paths);
+      continue;
+    }
+    throw std::runtime_error("provider '" + provider_name + "' has conflicting definitions for '" + path +
+                              "' (const and non-const values disagree on type)");
+  }
+}
+
+// Recursively promotes `const`/`c` tables into their parent table and records every
+// path they touch as protected. Recurses into ordinary nested tables first so that
+// deeper const blocks are already resolved before a parent-level const is promoted.
+void normalize_const(TomlValue::Table& table, const std::string& prefix, const std::string& provider_name,
+                      std::vector<std::string>& const_paths) {
+  for (auto& kv : table) {
+    if (kv.second.is_table()) {
+      const std::string child_prefix = prefix.empty() ? kv.first : prefix + "." + kv.first;
+      normalize_const(kv.second.table(), child_prefix, provider_name, const_paths);
+    }
+  }
+
+  for (const char* const_key : {"const", "c"}) {
+    auto it = table.find(const_key);
+    if (it == table.end()) continue;
+    if (!it->second.is_table()) {
+      throw std::runtime_error("provider '" + provider_name + "' has '" + const_key + "' at '" + prefix +
+                                "' that is not a table");
+    }
+    TomlValue::Table promoted = std::move(it->second.table());
+    table.erase(it);
+    merge_const_into(table, promoted, prefix, provider_name, const_paths);
+  }
+}
+
 AppDefaults load_defaults_file(const std::filesystem::path& path) {
   AppDefaults defaults;
   if (!std::filesystem::exists(path)) return defaults;
 
   auto cfg = toml::parse_file(path.string());
   if (auto value = cfg["default_provider"].value<std::string>()) defaults.default_provider = *value;
-  if (auto value = cfg["default_target"].value<std::string>()) defaults.default_target = *value;
   return defaults;
 }
 
-void load_provider_files(const std::filesystem::path& dir, std::unordered_map<std::string, ProviderConfig>& providers) {
+void load_provider_files(const std::filesystem::path& dir, std::unordered_map<std::string, ProviderConfig>& providers,
+                          std::vector<std::string>& warnings) {
   for (const auto& path : list_toml_files(dir)) {
-    auto cfg = toml::parse_file(path.string());
+    try {
+      auto cfg = toml::parse_file(path.string());
+      TomlValue root = toml_table_to_value(cfg);
 
-    ProviderConfig provider;
-    provider.name = cfg["name"].value_or(std::string());
-    provider.method = cfg["method"].value_or(std::string());
-    provider.base_url = cfg["base_url"].value_or(std::string());
-    provider.path = cfg["path"].value_or(std::string("/"));
+      const TomlValue* name_value = root.find("name");
+      if (!name_value || !name_value->is_scalar() || name_value->scalar().empty()) {
+        throw std::runtime_error("provider file missing name: " + path.string());
+      }
+      const std::string name = name_value->scalar();
 
-    if (provider.name.empty()) throw std::runtime_error("provider file missing name: " + path.string());
-    if (provider.method.empty()) throw std::runtime_error("provider file missing method: " + path.string());
-    if (provider.base_url.empty()) throw std::runtime_error("provider file missing base_url: " + path.string());
+      ProviderConfig provider;
+      provider.name = name;
+      provider.source_file = path.string();
 
-    if (cfg["headers"] && !cfg["headers"].is_table()) throw std::runtime_error("headers must be a table: " + path.string());
-    if (cfg["body"] && !cfg["body"].is_table()) throw std::runtime_error("body must be a table: " + path.string());
-    provider.headers = parse_string_table(cfg["headers"].as_table(), "headers");
-    provider.body = parse_string_table(cfg["body"].as_table(), "body");
+      normalize_const(root.table(), "", name, provider.const_paths);
 
-    for (const auto& kv : cfg) {
-      const std::string key(kv.first.str());
-      if (is_reserved_provider_key(key)) continue;
-      if (kv.second.is_table()) continue;
-      provider.values.emplace(key, toml_node_to_string(kv.second));
-    }
+      const TomlValue* request = root.find("request");
+      if (!request || !request->is_table()) {
+        throw std::runtime_error("provider '" + name + "' missing [request] section: " + path.string());
+      }
+      auto require_scalar = [&](const char* key) -> std::string {
+        const TomlValue* value = request->find(key);
+        if (!value || !value->is_scalar() || value->scalar().empty()) {
+          throw std::runtime_error("provider '" + name + "' missing request." + key + ": " + path.string());
+        }
+        return value->scalar();
+      };
+      require_scalar("method");
+      require_scalar("base_url");
+      if (const TomlValue* path_value = request->find("path"); !path_value || !path_value->is_scalar()) {
+        throw std::runtime_error("provider '" + name + "' missing request.path: " + path.string());
+      }
 
-    if (!providers.emplace(provider.name, provider).second) {
-      throw std::runtime_error("duplicate provider name: " + provider.name);
+      for (const auto& kv : root.table()) {
+        if (kv.first == "name") continue;
+        if (kv.second.is_table()) provider.top_level_sections.push_back(kv.first);
+      }
+
+      provider.tree = std::move(root);
+
+      if (!providers.emplace(name, std::move(provider)).second) {
+        warnings.push_back("duplicate provider name '" + name + "' in " + path.string() + " (ignored, first definition kept)");
+      }
+    } catch (const std::exception& ex) {
+      warnings.push_back(std::string("provider file error in ") + path.string() + ": " + ex.what());
     }
   }
 }
 
-void load_target_files(const std::filesystem::path& dir, std::unordered_map<std::string, std::vector<TargetConfig>>& targets_by_name) {
+void load_target_files(const std::filesystem::path& dir, const std::unordered_map<std::string, ProviderConfig>& providers,
+                        std::vector<TargetConfig>& targets, std::vector<std::string>& warnings) {
+  std::set<std::string> defaults_seen_for_use;
+  std::set<std::pair<std::string, std::string>> identities_seen;
+
   for (const auto& path : list_toml_files(dir)) {
-    auto cfg = toml::parse_file(path.string());
-    const auto use = cfg["use"].value_or(std::string());
-    if (use.empty()) throw std::runtime_error("target file missing use: " + path.string());
+    try {
+      auto cfg = toml::parse_file(path.string());
+      TomlValue root = toml_table_to_value(cfg);
 
-    for (const auto& kv : cfg) {
-      const std::string key(kv.first.str());
-      if (key == "use") continue;
-      if (!kv.second.is_table()) continue;
+      const TomlValue* use_value = root.find("use");
+      if (!use_value || !use_value->is_scalar() || use_value->scalar().empty()) {
+        throw std::runtime_error("target file missing use: " + path.string());
+      }
+      const std::string use = use_value->scalar();
 
-      TargetConfig target;
-      target.name = key;
-      target.use = use;
-
-      const auto& table = *kv.second.as_table();
-      for (const auto& item : table) {
-        target.values.emplace(item.first.str(), toml_node_to_string(item.second));
+      std::string default_name;
+      if (const TomlValue* default_value = root.find("default"); default_value && default_value->is_scalar()) {
+        default_name = default_value->scalar();
       }
 
-      auto& bucket = targets_by_name[target.name];
-      const auto duplicate = std::find_if(bucket.begin(), bucket.end(), [&](const TargetConfig& existing) {
-        return existing.use == target.use;
-      });
-      if (duplicate != bucket.end()) {
-        throw std::runtime_error("duplicate target name for provider '" + target.use + "': " + target.name);
+      auto provider_it = providers.find(use);
+      if (provider_it == providers.end()) {
+        warnings.push_back("target file " + path.string() + " references unknown provider '" + use + "'");
+        continue;
       }
-      bucket.push_back(std::move(target));
+      const ProviderConfig& provider = provider_it->second;
+      const std::set<std::string> allowed_sections(provider.top_level_sections.begin(), provider.top_level_sections.end());
+
+      for (const auto& kv : root.table()) {
+        if (kv.first == "use" || kv.first == "default") continue;
+        if (!kv.second.is_table()) continue;
+
+        TargetConfig target;
+        target.name = kv.first;
+        target.use = use;
+        target.source_file = path.string();
+
+        bool section_error = false;
+        for (const auto& section_kv : kv.second.table()) {
+          if (allowed_sections.count(section_kv.first) == 0) {
+            warnings.push_back("target '" + target.name + "' in " + path.string() + " writes to section '" +
+                                section_kv.first + "' not declared by provider '" + use + "' (target ignored)");
+            section_error = true;
+            break;
+          }
+        }
+        if (section_error) continue;
+
+        const auto identity = std::make_pair(use, target.name);
+        if (!identities_seen.insert(identity).second) {
+          warnings.push_back("duplicate target '" + target.name + "' for provider '" + use + "' in " + path.string() +
+                              " (ignored, first definition kept)");
+          continue;
+        }
+
+        if (!default_name.empty() && target.name == default_name) {
+          if (defaults_seen_for_use.count(use)) {
+            warnings.push_back("provider '" + use + "' already has a default target; default in " + path.string() +
+                                " ignored");
+          } else {
+            target.is_default = true;
+            defaults_seen_for_use.insert(use);
+          }
+        }
+
+        target.tree = kv.second;
+        targets.push_back(std::move(target));
+      }
+    } catch (const std::exception& ex) {
+      warnings.push_back(std::string("target file error in ") + path.string() + ": " + ex.what());
     }
   }
 }
@@ -146,11 +271,11 @@ ConfigPaths get_config_paths(const std::string& app_name) {
 LoadedConfig load_config_tree(const ConfigPaths& paths) {
   LoadedConfig loaded;
   loaded.defaults = load_defaults_file(paths.config_file);
-  load_provider_files(paths.providers_dir, loaded.providers);
-  load_target_files(paths.targets_dir, loaded.targets_by_name);
+  load_provider_files(paths.providers_dir, loaded.providers, loaded.warnings);
+  load_target_files(paths.targets_dir, loaded.providers, loaded.targets, loaded.warnings);
 
   if (loaded.providers.empty()) throw std::runtime_error("no providers found in " + paths.providers_dir.string());
-  if (loaded.targets_by_name.empty()) throw std::runtime_error("no targets found in " + paths.targets_dir.string());
+  if (loaded.targets.empty()) throw std::runtime_error("no targets found in " + paths.targets_dir.string());
 
   return loaded;
 }

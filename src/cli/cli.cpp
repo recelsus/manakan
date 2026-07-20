@@ -8,9 +8,11 @@ namespace manakan {
 
 CliOptions parse_cli_options(int argc, char* argv[]) {
   CliOptions options;
+  bool command_set = false;
 
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
+
     if (arg == "-h" || arg == "--help") {
       options.show_help = true;
       continue;
@@ -19,6 +21,19 @@ CliOptions parse_cli_options(int argc, char* argv[]) {
       options.show_version = true;
       continue;
     }
+
+    if (!command_set && !arg.empty() && arg[0] != '-') {
+      if (arg == "send" || arg == "s") {
+        options.command = Command::Send;
+      } else if (arg == "config") {
+        options.command = Command::Config;
+      } else {
+        throw std::runtime_error("unknown command: " + arg + " (expected 'send', 's', or 'config')");
+      }
+      command_set = true;
+      continue;
+    }
+
     if (arg == "-p" || arg == "--provider") {
       if (i + 1 >= argc) throw std::runtime_error("missing value for --provider");
       options.provider = argv[++i];
@@ -39,10 +54,35 @@ CliOptions parse_cli_options(int argc, char* argv[]) {
       options.inputs[raw.substr(0, pos)] = raw.substr(pos + 1);
       continue;
     }
+    if (arg == "--json") {
+      options.config_json = true;
+      continue;
+    }
+    if (arg == "--body") {
+      options.config_body = true;
+      continue;
+    }
+    if (arg == "--curl") {
+      options.config_curl = true;
+      continue;
+    }
+    if (arg == "--check") {
+      options.config_check = true;
+      continue;
+    }
     if (!arg.empty() && arg[0] == '-') {
       throw std::runtime_error("unknown option: " + arg);
     }
     options.positional_args.push_back(arg);
+  }
+
+  if (!options.show_help && !options.show_version && !command_set) {
+    throw std::runtime_error("missing command (expected 'send', 's', or 'config')");
+  }
+
+  if ((options.config_json || options.config_body || options.config_curl || options.config_check) &&
+      options.command != Command::Config) {
+    throw std::runtime_error("--json/--body/--curl/--check require the 'config' command");
   }
 
   return options;

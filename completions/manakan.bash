@@ -121,6 +121,9 @@ _manakan_provider_file_by_name() {
 }
 
 _manakan_provider_keys() {
+    # Providers use [request]/[headers]/[data] sections (and Targets only ever
+    # reference values by bare key name, regardless of section), so this scans
+    # all three plus dotted assignments and prints just the leaf key name.
     local provider_name="$1"
     [[ -n "$provider_name" ]] || return 0
 
@@ -128,21 +131,24 @@ _manakan_provider_keys() {
     file="$(_manakan_provider_file_by_name "$provider_name")" || return 0
 
     awk '
-        BEGIN { in_headers = 0; in_body = 0 }
+        BEGIN { in_section = 0 }
         /^\[/ {
-            in_headers = ($0 == "[headers]")
-            in_body = ($0 == "[body]")
+            in_section = ($0 == "[request]" || $0 == "[headers]" || $0 == "[data]")
             next
         }
-        in_headers || in_body {
+        in_section {
             if (match($0, /^[[:space:]]*([A-Za-z0-9_.-]+)[[:space:]]*=/, m)) {
-                print m[1]
+                n = split(m[1], parts, ".")
+                print parts[n]
             }
         }
     ' "$file"
 }
 
 _manakan_target_keys() {
+    # Target blocks assign into a Provider'"'"'s sections via dotted keys, e.g.
+    # `data.username = ...` or `request.webhook_path = ...`; only the leaf name
+    # is a valid --input/{{name}} key.
     local target_name="$1"
     [[ -n "$target_name" ]] || return 0
 
@@ -157,7 +163,8 @@ _manakan_target_keys() {
         }
         in_target {
             if (match($0, /^[[:space:]]*([A-Za-z0-9_.-]+)[[:space:]]*=/, m)) {
-                print m[1]
+                n = split(m[1], parts, ".")
+                print parts[n]
             }
         }
     ' "$file"
@@ -189,10 +196,16 @@ _manakan_complete_input() {
 }
 
 _manakan_completions() {
-    local cur prev provider
+    local cur prev provider command
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
+    command="${COMP_WORDS[1]:-}"
+
+    if (( COMP_CWORD == 1 )); then
+        COMPREPLY=($(compgen -W "send s config --help -h --version -v" -- "$cur"))
+        return 0
+    fi
 
     case "$prev" in
         -p|--provider)
@@ -211,7 +224,11 @@ _manakan_completions() {
     esac
 
     if [[ "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "--input -i --provider -p --target -t --help -h --version -v" -- "$cur"))
+        local opts="--input -i --provider -p --target -t --help -h --version -v"
+        if [[ "$command" == "config" ]]; then
+            opts+=" --json --body --curl --check"
+        fi
+        COMPREPLY=($(compgen -W "$opts" -- "$cur"))
         return 0
     fi
 

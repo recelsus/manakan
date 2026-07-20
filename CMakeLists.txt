@@ -24,6 +24,9 @@ add_library(manakan_core STATIC
   src/app/run_command.cpp
   src/cli/cli.cpp
   src/config/config_loader.cpp
+  src/diagnostics/config_check.cpp
+  src/merge/merge_tree.cpp
+  src/request/build_request.cpp
   src/resolve/request_resolver.cpp
   src/utils/helpers.cpp
 )
