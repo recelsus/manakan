@@ -326,6 +326,59 @@ void test_const_allows_sibling_override_partial_protection() {
   require(user->find("token")->scalar() == "secret", "expected const-protected token to survive unchanged");
 }
 
+void test_target_const_and_c_keys_are_ordinary_data() {
+  // `const`/`c` are only special when they appear in a Provider file, where they
+  // mark a subtree as protected (see test_const_protects_field_from_target_override
+  // and test_const_allows_sibling_override_partial_protection). A Target file may
+  // use the literal keys "const"/"c" too, but per
+  // reference/manakan_toml.requirements.md section 10 ("constの予約") they are not
+  // reserved there: no promotion happens, nothing gets protected, and they just
+  // become ordinary nested fields under whichever section the Target wrote them
+  // into. This test uses the exact same [data.const]-shaped nesting a Provider
+  // would use for protection, but authored on the Target side, to prove it is
+  // treated as plain data instead.
+  TempDir dir;
+  const auto root = dir.path / "manakan";
+  write_file(root / "providers" / "discord.toml",
+             "name = \"discord\"\n"
+             "[request]\n"
+             "method = \"POST\"\n"
+             "base_url = \"https://discord.com\"\n"
+             "path = \"/webhook\"\n"
+             "[data]\n"
+             "content = \"{{argv.1}}\"\n");
+  write_file(root / "targets" / "discord.toml",
+             "use = \"discord\"\n"
+             "default = \"main\"\n"
+             "[main]\n"
+             "data.const.locked = \"target-const-value\"\n"
+             "data.c.also_locked = \"target-c-value\"\n");
+
+  const auto loaded = manakan::load_config_tree(make_paths(root));
+  const auto& provider = loaded.providers.at("discord");
+  require(provider.const_paths.empty(),
+          "provider declared no const/c block; nothing should be registered as const-protected");
+
+  manakan::CliOptions cli;
+  cli.provider = "discord";
+  cli.positional_args.push_back("hello");
+  const auto request = manakan::resolve_request(loaded, cli);
+
+  // "const" and "c" survive as literal, unpromoted nested keys under `data`,
+  // exactly where the Target put them -- not hoisted up to become siblings of
+  // `content` the way a Provider-side const/c block would be.
+  const auto* const_field = request.body.find("const");
+  require(const_field != nullptr && const_field->is_table(), "expected 'const' to remain a literal nested table under data");
+  require(const_field->find("locked")->scalar() == "target-const-value", "expected data.const.locked to survive as ordinary data");
+
+  const auto* c_field = request.body.find("c");
+  require(c_field != nullptr && c_field->is_table(), "expected 'c' to remain a literal nested table under data");
+  require(c_field->find("also_locked")->scalar() == "target-c-value", "expected data.c.also_locked to survive as ordinary data");
+
+  require(request.body.find("locked") == nullptr, "'const' contents must not be promoted up to data's top level");
+  require(request.body.find("also_locked") == nullptr, "'c' contents must not be promoted up to data's top level");
+}
+
 } // namespace
 
 int main() {
@@ -338,6 +391,7 @@ int main() {
       {"default_provider_and_target_are_used", test_default_provider_and_target_are_used},
       {"const_protects_field_from_target_override", test_const_protects_field_from_target_override},
       {"const_allows_sibling_override_partial_protection", test_const_allows_sibling_override_partial_protection},
+      {"target_const_and_c_keys_are_ordinary_data", test_target_const_and_c_keys_are_ordinary_data},
   };
 
   int failed = 0;
