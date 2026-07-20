@@ -1,0 +1,17 @@
+# vim: ft=toml
+#
+# Generic, secret-free example showing manakan sending a request to a plain
+# HTTP API rather than a chat webhook. https://httpbingo.org (an actively
+# maintained Go rewrite of the original httpbin.org, which has been
+# unreliable) echoes back whatever it receives, so this works out of the box
+# with no account, token, or webhook URL.
+
+name = "httpbingo"
+
+[request]
+method = "GET"
+base_url = "https://httpbingo.org"
+path = "/get?greeting={{greeting}}&text={{argv.1}}"
+
+[headers]
+accept = "application/json"

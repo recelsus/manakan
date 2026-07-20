@@ -1,0 +1,12 @@
+# vim: ft=toml
+#
+# manakan's primary purpose is sending chat messages (Discord, Chatwork, ...),
+# but a provider is just an HTTP request template -- it can call any API.
+# `httpbingo` below is a secret-free, working example of that: it sends a real
+# GET request to https://httpbingo.org and echoes back what it received.
+#
+# providers/discord.toml.example and providers/chatwork.toml.example are kept
+# as *.example because they need a real webhook URL / token you must supply;
+# this file and providers/targets/httpbingo.toml need nothing and work as-is.
+
+default_provider = "httpbingo"

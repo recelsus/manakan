@@ -379,6 +379,91 @@ void test_target_const_and_c_keys_are_ordinary_data() {
   require(request.body.find("also_locked") == nullptr, "'c' contents must not be promoted up to data's top level");
 }
 
+void test_provider_name_does_not_leak_as_named_placeholder() {
+  // The Provider's own `name` field is identity metadata, not user data. It must
+  // not be reachable via a bare {{name}} placeholder just because it happens to
+  // sit at the root of the tree collect_named_values walks.
+  TempDir dir;
+  const auto root = dir.path / "manakan";
+  write_file(root / "providers" / "leaktest.toml",
+             "name = \"leaktest\"\n"
+             "[request]\n"
+             "method = \"POST\"\n"
+             "base_url = \"https://example.com\"\n"
+             "path = \"/x\"\n"
+             "[data]\n"
+             "whoami = \"{{name}}\"\n");
+  write_file(root / "targets" / "leaktest.toml",
+             "use = \"leaktest\"\n"
+             "default = \"main\"\n"
+             "[main]\n"
+             "data.dummy = \"1\"\n");
+
+  const auto loaded = manakan::load_config_tree(make_paths(root));
+  manakan::CliOptions cli;
+  cli.provider = "leaktest";
+  cli.positional_args.push_back("hello");
+
+  try {
+    (void)manakan::resolve_request(loaded, cli);
+    throw std::runtime_error("expected missing placeholder error for {{name}}");
+  } catch (const std::runtime_error& ex) {
+    require(std::string(ex.what()).find("placeholder.name") != std::string::npos,
+            "expected {{name}} to be reported missing, not resolved to the provider's own name; got: " +
+                std::string(ex.what()));
+  }
+}
+
+void test_array_placeholders_and_wholesale_array_replacement() {
+  // reference/manakan_toml.requirements.md sections 5/12: arrays are one value
+  // (Target replaces wholesale, never merged element-by-element), but string
+  // elements inside an array still get placeholder substitution.
+  TempDir dir;
+  const auto root = dir.path / "manakan";
+  write_file(root / "providers" / "discord.toml",
+             "name = \"discord\"\n"
+             "[request]\n"
+             "method = \"POST\"\n"
+             "base_url = \"https://discord.com\"\n"
+             "path = \"/webhook\"\n"
+             "[data]\n"
+             "content = \"{{argv.1}}\"\n"
+             "tags = [\"a\", \"prefix-{{arg.suffix}}\"]\n");
+  write_file(root / "targets" / "discord.toml",
+             "use = \"discord\"\n"
+             "[keep]\n"
+             "data.username = \"x\"\n"
+             "[replace]\n"
+             "data.tags = \"not-an-array-anymore\"\n");
+
+  const auto loaded = manakan::load_config_tree(make_paths(root));
+
+  {
+    manakan::CliOptions cli;
+    cli.provider = "discord";
+    cli.target = "keep";
+    cli.inputs["suffix"] = "hello";
+    cli.positional_args.push_back("msg");
+    const auto request = manakan::resolve_request(loaded, cli);
+    const auto* tags = request.body.find("tags");
+    require(tags != nullptr && tags->is_array(), "expected tags to remain an array when target doesn't touch it");
+    require(tags->array().size() == 2, "expected two array elements");
+    require(tags->array()[0].scalar() == "a", "expected first array element unchanged");
+    require(tags->array()[1].scalar() == "prefix-hello", "expected placeholder inside array element to resolve");
+  }
+
+  {
+    manakan::CliOptions cli;
+    cli.provider = "discord";
+    cli.target = "replace";
+    cli.positional_args.push_back("msg");
+    const auto request = manakan::resolve_request(loaded, cli);
+    const auto* tags = request.body.find("tags");
+    require(tags != nullptr && tags->is_scalar(), "expected target to wholesale-replace the array with a scalar");
+    require(tags->scalar() == "not-an-array-anymore", "expected replaced scalar value");
+  }
+}
+
 } // namespace
 
 int main() {
@@ -392,6 +477,8 @@ int main() {
       {"const_protects_field_from_target_override", test_const_protects_field_from_target_override},
       {"const_allows_sibling_override_partial_protection", test_const_allows_sibling_override_partial_protection},
       {"target_const_and_c_keys_are_ordinary_data", test_target_const_and_c_keys_are_ordinary_data},
+      {"provider_name_does_not_leak_as_named_placeholder", test_provider_name_does_not_leak_as_named_placeholder},
+      {"array_placeholders_and_wholesale_array_replacement", test_array_placeholders_and_wholesale_array_replacement},
   };
 
   int failed = 0;

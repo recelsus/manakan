@@ -4,29 +4,12 @@
 
 ```bash
 mkdir -p build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j
+cmake ..
+make
 ```
 
-### Binary
-
 ```bash
-# Install to $HOME/.local/bin by default
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-cmake --install build
-
-# Or install system-wide (requires privilege)
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMANAKAN_INSTALL_TO_HOME_LOCAL=OFF -DCMAKE_INSTALL_PREFIX=/usr/local
-cmake --build build -j
-sudo cmake --install build
-
-# If you already configured build/ before this change, run configure again
-cmake -S . -B build -DMANAKAN_INSTALL_TO_HOME_LOCAL=ON
-
-# If you need completion
-# If XDG_DATA_HOME is set, make install also places the completion script into
-# $XDG_DATA_HOME/bash_completion/manakan.bash
+cp config/ $HOME/.config/manakan/
 ```
 
 ### Config
@@ -47,7 +30,16 @@ Layout:
   invent new top-level sections.
 
 If the configuration directories do not exist, `manakan` asks whether it should create them.
-Example files stay in this repository under `config/`; they are not installed automatically.
+Files under `config/` in this repository are never installed or resolved automatically --
+copy the ones you want into your config directory yourself.
+
+- `config.toml`, `providers/httpbingo.toml`, `targets/httpbingo.toml` need no secrets and work
+  as committed. `httpbingo` is a plain HTTP API (not a chat service), included to show that a
+  provider is just an HTTP request template -- manakan's main use is sending chat messages,
+  but it isn't limited to that.
+- `providers/discord.toml.example` and `providers/chatwork.toml.example` (with their matching
+  `targets/*.toml.example`) need a real webhook URL / token filled in, hence the `.example`
+  suffix -- rename them (drop `.example`) once you've supplied your own values.
 
 Provider identity is its `name`; duplicate `name`s across files is an error. Target identity
 is `(use, target-name)`; duplicates are an error. A target file may declare `default = "name"`

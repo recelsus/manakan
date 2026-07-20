@@ -107,12 +107,16 @@ std::string resolve_template(const std::string& input, ResolverContext& ctx) {
 
 // Collects every scalar leaf anywhere in the tree, keyed by its own (bare) key
 // name, so `{{name}}` placeholders can reference a value defined at any depth in
-// any top-level section -- not just the section it is used from.
-void collect_named_values(const TomlValue& value, std::unordered_map<std::string, std::string>& out) {
+// any top-level section -- not just the section it is used from. The tree's
+// root-level "name" is the Provider's own identity (see config_loader.cpp), not
+// user data, so it is excluded there; a nested "name" (e.g. data.user.name) is
+// ordinary data and still collected.
+void collect_named_values(const TomlValue& value, std::unordered_map<std::string, std::string>& out, bool is_root = true) {
   if (!value.is_table()) return;
   for (const auto& kv : value.table()) {
+    if (is_root && kv.first == "name") continue;
     if (kv.second.is_scalar()) out[kv.first] = kv.second.scalar();
-    collect_named_values(kv.second, out);
+    collect_named_values(kv.second, out, false);
   }
 }
 

@@ -1,0 +1,7 @@
+# vim: ft=toml
+
+use = "httpbingo"
+default = "example"
+
+[example]
+request.greeting = "hello-from-manakan"
